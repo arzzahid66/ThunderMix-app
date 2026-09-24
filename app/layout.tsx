@@ -10,7 +10,7 @@ const mono = JetBrains_Mono({
 
 export const metadata: Metadata = {
   title: { default: "Terminal Portal", template: "%s · Terminal Portal" },
-  description: "A terminal-style public communication portal. Messages are read and answered by human operators.",
+  description: "A terminal-style public communication portal. Send a message and receive replies in real time.",
   robots: { index: true, follow: true },
 };
 

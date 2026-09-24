@@ -130,7 +130,7 @@ export function TerminalOutput({ handle, session, messages, local, pending, clea
           <p className="mt-2 text-amber/90">
             <span className="animate-pulse-soft">[ SYSTEM ] Awaiting response…</span>
             <span className="block text-xs text-faint">
-              Message stored. An operator will reply when available; you can keep sending messages.
+              Message stored. A reply will arrive here when available; you can keep sending messages.
             </span>
           </p>
         )}

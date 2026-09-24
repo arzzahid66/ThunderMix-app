@@ -22,7 +22,7 @@ const HELP = [
   "  /sessions   list your sessions",
   "  /clear      clear the screen (history is kept)",
   "",
-  "Anything else you type is transmitted to the operators.",
+  "Anything else you type is transmitted as a message.",
   "Commands run only in your browser; nothing you type is executed on any system.",
 ];
 
@@ -260,8 +260,8 @@ export function TerminalApp() {
         description={
           <>
             Delete <span className="text-ink">{deleteTarget?.session_code}</span> from your history? It will disappear
-            from this list and be closed; you can&apos;t reopen it. As stated in the privacy notice, operators keep a
-            record of messages already sent.
+            from this list and be closed; you can&apos;t reopen it. As stated in the privacy notice, messages already
+            sent remain stored.
           </>
         }
         confirmLabel="Delete"
@@ -280,7 +280,7 @@ export function TerminalApp() {
         title="Exit portal"
         description={
           <>
-            Exiting ends this browser&apos;s access. Your messages stay stored for the operators, but you will{" "}
+            Exiting ends this browser&apos;s access. Your messages stay stored, but you will{" "}
             <span className="text-ink">not</span> be able to reopen this history from this browser — entering the same
             email again starts a fresh, empty history.
           </>

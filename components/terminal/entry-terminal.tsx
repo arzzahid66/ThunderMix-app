@@ -223,11 +223,6 @@ export function EntryTerminal({ existingName }: { existingName: string | null })
                     stored, and responded to by administrators. Please do not share passwords, financial information, or
                     other sensitive personal data.
                   </p>
-                  <p className="mt-2 text-muted">
-                    Replies are written by human operators. The terminal look is a visual theme only — this site does not
-                    access, scan or control any system, and it does not make you anonymous: your name, email and messages
-                    are stored.
-                  </p>
                 </div>
 
                 <label className="flex cursor-pointer items-start gap-3 text-[13px] text-ink">
@@ -273,7 +268,7 @@ export function EntryTerminal({ existingName }: { existingName: string | null })
         </section>
 
         <p className="mt-5 text-center text-[11px] leading-relaxed text-faint">
-          Human-operated channel · Responses may not be immediate · No passwords or sensitive data
+          Secure channel · Responses may not be immediate · No passwords or sensitive data
         </p>
       </div>
     </main>
