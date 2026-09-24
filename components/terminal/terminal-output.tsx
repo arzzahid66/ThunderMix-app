@@ -129,9 +129,6 @@ export function TerminalOutput({ handle, session, messages, local, pending, clea
         {awaiting && (
           <p className="mt-2 text-amber/90">
             <span className="animate-pulse-soft">[ SYSTEM ] Awaiting response…</span>
-            <span className="block text-xs text-faint">
-              Message stored. A reply will arrive here when available; you can keep sending messages.
-            </span>
           </p>
         )}
       </div>
