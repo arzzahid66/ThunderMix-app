@@ -1,0 +1,168 @@
+@import "tailwindcss";
+
+/* ---------------------------------------------------------------------------
+   Design tokens — premium terminal. Neon accents are reserved for meaning:
+   green = system/visitor/primary action, cyan = operator/incoming,
+   amber = warnings/pending, red = errors/destructive.
+   --------------------------------------------------------------------------- */
+@theme {
+  --color-void: #050505;
+  --color-panel: #0c0e0d;
+  --color-panel-2: #111412;
+  --color-raised: #161a18;
+  --color-line: #1f2723;
+  --color-line-strong: #2c3831;
+
+  --color-neon: #39ff9c;
+  --color-neon-dim: #1fae68;
+  --color-cyan: #4de4ff;
+  --color-cyan-dim: #2a9fb5;
+  --color-amber: #ffbe3d;
+  --color-danger: #ff5d6c;
+
+  --color-ink: #d7e4dc;
+  --color-muted: #8a9a91;
+  --color-faint: #5d6b63;
+
+  --font-mono: var(--font-jetbrains), "IBM Plex Mono", "Fira Code", ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  --animate-blink: blink 1.05s steps(1, end) infinite;
+  --animate-reveal: reveal 0.28s ease-out both;
+  --animate-pulse-soft: pulse-soft 1.8s ease-in-out infinite;
+}
+
+@keyframes blink {
+  0%, 50% { opacity: 1; }
+  50.01%, 100% { opacity: 0; }
+}
+
+@keyframes reveal {
+  from { opacity: 0; transform: translateY(3px); }
+  to { opacity: 1; transform: none; }
+}
+
+@keyframes pulse-soft {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.45; }
+}
+
+@keyframes scan {
+  from { transform: translateY(-100%); }
+  to { transform: translateY(100vh); }
+}
+
+:root {
+  color-scheme: dark;
+  --glow-neon: 0 0 6px rgb(57 255 156 / 0.55), 0 0 22px rgb(57 255 156 / 0.18);
+  --glow-cyan: 0 0 6px rgb(77 228 255 / 0.5), 0 0 22px rgb(77 228 255 / 0.15);
+}
+
+html,
+body {
+  background: var(--color-void);
+  color: var(--color-ink);
+}
+
+body {
+  font-family: var(--font-mono);
+  font-feature-settings: "calt" 1, "liga" 0;
+  -webkit-font-smoothing: antialiased;
+}
+
+::selection {
+  background: rgb(57 255 156 / 0.28);
+  color: #fff;
+}
+
+/* In the base layer so utilities (e.g. outline-none on the terminal input) can override it. */
+@layer base {
+  :focus-visible {
+    outline: 2px solid var(--color-cyan);
+    outline-offset: 2px;
+  }
+}
+
+/* Thin, themed scrollbars */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-line-strong) transparent;
+}
+
+@layer components {
+  .glow-neon { text-shadow: var(--glow-neon); }
+  .glow-cyan { text-shadow: var(--glow-cyan); }
+
+  /* Faint grid behind the terminal */
+  .bg-grid {
+    background-image:
+      linear-gradient(rgb(57 255 156 / 0.035) 1px, transparent 1px),
+      linear-gradient(90deg, rgb(57 255 156 / 0.035) 1px, transparent 1px);
+    background-size: 36px 36px;
+    background-position: center;
+  }
+
+  .bg-vignette {
+    background: radial-gradient(ellipse at 50% 35%, rgb(57 255 156 / 0.07), transparent 60%),
+      radial-gradient(ellipse at 50% 120%, rgb(77 228 255 / 0.06), transparent 55%);
+  }
+
+  /* CRT scanlines overlay (pointer-events: none; decorative) */
+  .scanlines {
+    pointer-events: none;
+    position: fixed;
+    inset: 0;
+    z-index: 50;
+    background: repeating-linear-gradient(
+      to bottom,
+      rgb(255 255 255 / 0.018) 0px,
+      rgb(255 255 255 / 0.018) 1px,
+      transparent 1px,
+      transparent 3px
+    );
+    mix-blend-mode: overlay;
+  }
+  .scanlines::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    height: 120px;
+    background: linear-gradient(to bottom, transparent, rgb(57 255 156 / 0.03), transparent);
+    animation: scan 9s linear infinite;
+  }
+
+  .terminal-frame {
+    background: linear-gradient(180deg, rgb(17 20 18 / 0.96), rgb(10 12 11 / 0.98));
+    border: 1px solid var(--color-line);
+    box-shadow:
+      0 0 0 1px rgb(0 0 0 / 0.6),
+      0 30px 80px -20px rgb(0 0 0 / 0.9),
+      0 0 60px -30px rgb(57 255 156 / 0.25);
+  }
+
+  .cursor-block {
+    display: inline-block;
+    width: 0.6em;
+    height: 1.15em;
+    vertical-align: text-bottom;
+    background: var(--color-neon);
+    box-shadow: var(--glow-neon);
+    animation: var(--animate-blink);
+  }
+
+  .pre-wrap {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+  .scanlines::after { display: none; }
+  .cursor-block { animation: none; }
+}
