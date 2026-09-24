@@ -1,8 +1,7 @@
 "use client";
 
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ShieldAlert } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import { apiRequest } from "@/lib/api-client";
@@ -38,12 +37,10 @@ export function EntryTerminal({ existingName }: { existingName: string | null })
   const phase: Phase = reduced && phaseRaw === "boot" ? (existingName ? "resume" : "form") : phaseRaw;
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
-  const [ack, setAck] = useState(false);
   const [errors, setErrors] = useState<string[]>([]);
   const [progress, setProgress] = useState<string[]>([]);
   const nameRef = useRef<HTMLInputElement>(null);
   const emailRef = useRef<HTMLInputElement>(null);
-  const noticeId = useId();
 
   // Boot sequence. With reduced motion it is skipped entirely (derived below).
   useEffect(() => {
@@ -76,7 +73,6 @@ export function EntryTerminal({ existingName }: { existingName: string | null })
     const e = emailSchema.safeParse(email);
     if (!n.success) problems.push(n.error.issues[0]?.message ?? "Invalid name.");
     if (!e.success) problems.push(e.error.issues[0]?.message ?? "Invalid email.");
-    if (!ack) problems.push("Acknowledge the privacy notice to continue.");
     setErrors(problems);
     if (problems.length) {
       if (!n.success) nameRef.current?.focus();
@@ -88,7 +84,7 @@ export function EntryTerminal({ existingName }: { existingName: string | null })
     setProgress(["[ SYSTEM ] Verifying identity parameters..."]);
     const res = await apiRequest<{ user: { name: string; is_new: boolean }; session: VisitorSession }>(
       "/api/visitor/register",
-      { method: "POST", body: { name, email, acknowledged: true } },
+      { method: "POST", body: { name, email } },
     );
     if (!res.ok) {
       setPhase("form");
@@ -213,29 +209,6 @@ export function EntryTerminal({ existingName }: { existingName: string | null })
                     placeholder="you@example.com"
                   />
                 </div>
-
-                <div id={noticeId} className="rounded-sm border border-amber/30 bg-amber/[0.04] p-4 text-[12.5px] leading-relaxed text-ink/90">
-                  <p className="mb-2 flex items-center gap-2 text-[11px] uppercase tracking-[0.2em] text-amber">
-                    <ShieldAlert className="size-4" aria-hidden="true" /> Privacy notice
-                  </p>
-                  <p>
-                    This is a public communication portal. Messages submitted through this platform may be monitored,
-                    stored, and responded to by administrators. Please do not share passwords, financial information, or
-                    other sensitive personal data.
-                  </p>
-                </div>
-
-                <label className="flex cursor-pointer items-start gap-3 text-[13px] text-ink">
-                  <input
-                    type="checkbox"
-                    checked={ack}
-                    onChange={(e) => setAck(e.target.checked)}
-                    disabled={busy}
-                    aria-describedby={noticeId}
-                    className="mt-0.5 size-4 shrink-0 accent-[var(--color-neon)]"
-                  />
-                  <span>I have read and acknowledge the privacy notice.</span>
-                </label>
 
                 {errors.length > 0 && (
                   <div role="alert" className="space-y-0.5 text-danger">

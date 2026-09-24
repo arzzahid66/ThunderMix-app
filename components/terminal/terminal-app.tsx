@@ -260,8 +260,8 @@ export function TerminalApp() {
         description={
           <>
             Delete <span className="text-ink">{deleteTarget?.session_code}</span> from your history? It will disappear
-            from this list and be closed; you can&apos;t reopen it. As stated in the privacy notice, messages already
-            sent remain stored.
+            from this list and be closed; you can&apos;t reopen it. Messages already sent
+            remain stored.
           </>
         }
         confirmLabel="Delete"

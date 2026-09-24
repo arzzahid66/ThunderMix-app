@@ -231,7 +231,7 @@ and visitors never see who replied.
 | Static | `npm run lint` · `npm run typecheck` · `npm run build` | all clean |
 
 **Browser end-to-end (manual, Playwright), all passing:**
-- Landing: boot sequence, validation errors, privacy acknowledgement, email normalization.
+- Landing: boot sequence, validation errors, email normalization.
 - Terminal: send (XSS payload rendered inert), "Message received / Awaiting response", operator
   reply arriving live as a multiline incoming transmission.
 - Operator: sees visitor messages live, READ receipt, unanswered badge.

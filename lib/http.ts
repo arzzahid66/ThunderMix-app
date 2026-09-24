@@ -78,13 +78,11 @@ export async function parseBody<T>(
         ? "invalid_name"
         : field === "email"
           ? "invalid_email"
-          : field === "acknowledged"
-            ? "not_acknowledged"
-            : field === "content" && first?.code === "too_small"
-              ? "empty_message"
-              : field === "content" && first?.code === "too_big"
-                ? "message_too_long"
-                : "invalid_request";
+          : field === "content" && first?.code === "too_small"
+            ? "empty_message"
+            : field === "content" && first?.code === "too_big"
+              ? "message_too_long"
+              : "invalid_request";
     return { ok: false, response: jsonError(code) };
   }
   return { ok: true, data: parsed.data };

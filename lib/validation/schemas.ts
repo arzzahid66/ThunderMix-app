@@ -41,7 +41,6 @@ export const emailSchema = z
 export const registerSchema = z.object({
   name: nameSchema,
   email: emailSchema,
-  acknowledged: z.literal(true, { error: "You must acknowledge the privacy notice." }),
 });
 
 export const messageContentSchema = z

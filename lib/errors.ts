@@ -7,7 +7,6 @@ export const ERROR_CATALOG = {
   invalid_request: { status: 400, message: "Malformed request." },
   invalid_name: { status: 400, message: "Name must be between 1 and 60 characters." },
   invalid_email: { status: 400, message: "Enter a valid email address." },
-  not_acknowledged: { status: 400, message: "You must acknowledge the privacy notice to continue." },
   empty_message: { status: 400, message: "Cannot transmit an empty message." },
   message_too_long: { status: 400, message: "Message exceeds the character limit." },
   invalid_status: { status: 400, message: "Invalid status." },

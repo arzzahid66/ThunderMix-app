@@ -21,16 +21,15 @@ const msg = (id: string, sender: Message["sender_type"], created: string, extra:
 
 describe("validation", () => {
   it("normalizes name and email", () => {
-    const r = registerSchema.parse({ name: "  Ada \n  Lovelace ", email: "  ADA@Example.COM ", acknowledged: true });
-    expect(r).toEqual({ name: "Ada Lovelace", email: "ada@example.com", acknowledged: true });
+    const r = registerSchema.parse({ name: "  Ada \n  Lovelace ", email: "  ADA@Example.COM " });
+    expect(r).toEqual({ name: "Ada Lovelace", email: "ada@example.com" });
   });
 
-  it("requires acknowledgement and valid values", () => {
-    expect(registerSchema.safeParse({ name: "A", email: "a@b.co", acknowledged: false }).success).toBe(false);
-    expect(registerSchema.safeParse({ name: "", email: "a@b.co", acknowledged: true }).success).toBe(false);
-    expect(registerSchema.safeParse({ name: "A", email: "nope", acknowledged: true }).success).toBe(false);
-    expect(registerSchema.safeParse({ name: "x".repeat(61), email: "a@b.co", acknowledged: true }).success).toBe(false);
-    expect(registerSchema.safeParse({ name: "bad\u0007", email: "a@b.co", acknowledged: true }).success).toBe(false);
+  it("requires valid values", () => {
+    expect(registerSchema.safeParse({ name: "", email: "a@b.co" }).success).toBe(false);
+    expect(registerSchema.safeParse({ name: "A", email: "nope" }).success).toBe(false);
+    expect(registerSchema.safeParse({ name: "x".repeat(61), email: "a@b.co" }).success).toBe(false);
+    expect(registerSchema.safeParse({ name: "bad\u0007", email: "a@b.co" }).success).toBe(false);
   });
 
   it("rejects empty messages and bad ids", () => {
