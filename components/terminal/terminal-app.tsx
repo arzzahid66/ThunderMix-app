@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { History, LogOut, Plus } from "lucide-react";
+import { LogOut, Plus, Wallet } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { ConnectionBadge } from "@/components/ui/status-badge";
@@ -10,10 +10,12 @@ import { Spinner } from "@/components/ui/spinner";
 import { apiRequest } from "@/lib/api-client";
 import { toHandle } from "@/lib/format";
 import { useTerminalSession } from "@/hooks/use-terminal-session";
+import { useXmrWallet } from "@/hooks/use-xmr-wallet";
 import type { VisitorSession } from "@/types";
 import { SessionPanel } from "./session-panel";
 import { TerminalInput, type TerminalInputHandle } from "./terminal-input";
 import { TerminalOutput } from "./terminal-output";
+import { WalletPanel } from "./wallet-panel";
 
 const HELP = [
   "AVAILABLE COMMANDS",
@@ -29,6 +31,7 @@ const HELP = [
 export function TerminalApp() {
   const router = useRouter();
   const t = useTerminalSession();
+  const wallet = useXmrWallet();
   const inputRef = useRef<TerminalInputHandle>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [confirmExit, setConfirmExit] = useState(false);
@@ -109,7 +112,7 @@ export function TerminalApp() {
         lines={[`[ ERROR ] ${t.fatal.message}`, "[ SYSTEM ] Connection terminated."]}
         action={
           <Button variant="primary" onClick={() => router.replace("/")}>
-            Re-identify
+            Enter key again
           </Button>
         }
       />
@@ -151,10 +154,10 @@ export function TerminalApp() {
             size="sm"
             className="lg:hidden"
             onClick={() => setDrawerOpen(true)}
-            aria-label="Open session history"
+            aria-label="Open wallet and session history"
             aria-expanded={drawerOpen}
           >
-            <History className="size-4" aria-hidden="true" />
+            <Wallet className="size-4" aria-hidden="true" />
           </Button>
           <Button variant="ghost" size="sm" onClick={() => void t.createSession()} disabled={t.creating || blocked} aria-label="New session">
             <Plus className="size-4" aria-hidden="true" />
@@ -174,41 +177,47 @@ export function TerminalApp() {
 
       <div className="flex min-h-0 flex-1">
         {/* Desktop session panel */}
-        <aside className="hidden w-72 shrink-0 border-r border-line bg-panel/60 lg:block">
-          <SessionPanel
-            sessions={t.sessions}
-            activeId={t.activeId}
-            unread={t.unread}
-            creating={t.creating}
-            canCreate={!blocked}
-            onSelect={t.selectSession}
-            onCreate={() => void t.createSession()}
-            onDelete={setDeleteTarget}
-          />
+        <aside className="hidden w-72 shrink-0 flex-col border-r border-line bg-panel/60 lg:flex">
+          <WalletPanel {...wallet} />
+          <div className="min-h-0 flex-1">
+            <SessionPanel
+              sessions={t.sessions}
+              activeId={t.activeId}
+              unread={t.unread}
+              creating={t.creating}
+              canCreate={!blocked}
+              onSelect={t.selectSession}
+              onCreate={() => void t.createSession()}
+              onDelete={setDeleteTarget}
+            />
+          </div>
         </aside>
 
         {/* Mobile drawer */}
         {drawerOpen && (
-          <div className="fixed inset-0 z-40 lg:hidden" role="dialog" aria-modal="true" aria-label="Session history">
+          <div className="fixed inset-0 z-40 lg:hidden" role="dialog" aria-modal="true" aria-label="Wallet and session history">
             <button type="button" aria-label="Close session list" className="absolute inset-0 bg-black/70" onClick={() => setDrawerOpen(false)} />
-            <div className="absolute inset-y-0 left-0 w-[min(85vw,20rem)] border-r border-line bg-panel shadow-2xl animate-reveal">
-              <SessionPanel
-                sessions={t.sessions}
-                activeId={t.activeId}
-                unread={t.unread}
-                creating={t.creating}
-                canCreate={!blocked}
-                onSelect={(id) => {
-                  t.selectSession(id);
-                  setDrawerOpen(false);
-                }}
-                onCreate={() => {
-                  void t.createSession();
-                  setDrawerOpen(false);
-                }}
-                onDelete={setDeleteTarget}
-                onClose={() => setDrawerOpen(false)}
-              />
+            <div className="absolute inset-y-0 left-0 flex w-[min(85vw,20rem)] flex-col border-r border-line bg-panel shadow-2xl animate-reveal">
+              <WalletPanel {...wallet} />
+              <div className="min-h-0 flex-1">
+                <SessionPanel
+                  sessions={t.sessions}
+                  activeId={t.activeId}
+                  unread={t.unread}
+                  creating={t.creating}
+                  canCreate={!blocked}
+                  onSelect={(id) => {
+                    t.selectSession(id);
+                    setDrawerOpen(false);
+                  }}
+                  onCreate={() => {
+                    void t.createSession();
+                    setDrawerOpen(false);
+                  }}
+                  onDelete={setDeleteTarget}
+                  onClose={() => setDrawerOpen(false)}
+                />
+              </div>
             </div>
           </div>
         )}
@@ -280,9 +289,8 @@ export function TerminalApp() {
         title="Exit portal"
         description={
           <>
-            Exiting ends this browser&apos;s access. Your messages stay stored, but you will{" "}
-            <span className="text-ink">not</span> be able to reopen this history from this browser — entering the same
-            email again starts a fresh, empty history.
+            Exiting ends this browser&apos;s access. Your messages stay stored. To return, enter your private key
+            again; sessions from this browser will <span className="text-ink">not</span> reappear.
           </>
         }
         confirmLabel="Exit"

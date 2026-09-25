@@ -20,6 +20,11 @@ export function generateToken(): string {
   return randomBytes(32).toString("base64url");
 }
 
+/** A visitor's 64-character hex private key (256 bits). Only its hash is stored. */
+export function generatePrivateKey(): string {
+  return randomBytes(32).toString("hex");
+}
+
 function isPlausibleToken(value: string | undefined): value is string {
   return !!value && /^[A-Za-z0-9_-]{43}$/.test(value);
 }

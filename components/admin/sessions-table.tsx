@@ -16,7 +16,7 @@ export function SessionsTable({ rows, showUser = true }: { rows: AdminSessionRow
           <tr>
             <th scope="col" className={thCls}>Session</th>
             {showUser && <th scope="col" className={thCls}>User</th>}
-            {showUser && <th scope="col" className={thCls}>Email</th>}
+            {showUser && <th scope="col" className={thCls}>Key</th>}
             <th scope="col" className={thCls}>Created</th>
             <th scope="col" className={thCls}>Last activity</th>
             <th scope="col" className={`${thCls} text-right`}>Msgs</th>
@@ -51,7 +51,7 @@ export function SessionsTable({ rows, showUser = true }: { rows: AdminSessionRow
                   {s.user_status === "blocked" && <span className="ml-2 text-[10px] uppercase text-danger">⊘ blocked</span>}
                 </td>
               )}
-              {showUser && <td className={`${tdCls} max-w-[15rem] truncate text-muted`}>{s.user_email}</td>}
+              {showUser && <td className={`${tdCls} font-mono text-muted`}>…{s.user_key_hint}</td>}
               <td className={`${tdCls} text-muted`}><TimeText iso={s.created_at} mode="datetime" /></td>
               <td className={`${tdCls} text-muted`}><TimeText iso={s.last_activity_at} mode="relative" /></td>
               <td className={`${tdCls} text-right tabular-nums`}>{s.message_count}</td>

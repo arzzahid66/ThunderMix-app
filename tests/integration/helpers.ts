@@ -28,8 +28,9 @@ export function newToken() {
   return randomBytes(32).toString("base64url");
 }
 
-export function uniqueEmail(tag = "visitor") {
-  return `${tag}.${randomUUID().slice(0, 8)}@example.test`;
+/** A visitor private key, as the admin API generates it. */
+export function newKey() {
+  return randomBytes(32).toString("hex");
 }
 
 export interface DbError {
@@ -54,14 +55,29 @@ export async function rows<T = Record<string, unknown>>(identity: DbIdentity, sq
   return withDb(identity, async (c) => (await c.query(sql, params)).rows as T[]);
 }
 
-export async function register(token: string, name: string, email: string) {
-  const result = await attempt<{ user: { name: string; is_new: boolean }; session: { id: string; session_code: string } }>(
-    { visitorToken: token },
-    "select public.visitor_register($1, $2)",
-    [name, email],
+/** Inserts a user directly (fast path; admin_create_user is tested on its own). */
+export async function createUser(name = "Visitor", key = newKey()) {
+  const { rows: r } = await owner.query<{ id: string }>(
+    "insert into users (name, access_key_hash, key_hint) values ($1, private.hash_token($2), right($2, 4)) returning id",
+    [name, key],
   );
-  if (result.error) throw new Error(result.error.message);
-  return result.data;
+  return { id: r[0].id, key };
+}
+
+export function login(token: string, key: string) {
+  return attempt<{ user: { name: string }; session: { id: string; session_code: string } }>(
+    { visitorToken: token },
+    "select public.visitor_login($1)",
+    [key],
+  );
+}
+
+/** Creates a user (unless a key is given) and signs this browser token in with the key. */
+export async function register(token: string, name = "Visitor", key?: string) {
+  const user = key ? { id: null, key } : await createUser(name);
+  const result = await login(token, user.key);
+  if (result.error || !result.data) throw new Error(result.error?.message ?? "login failed");
+  return { ...result.data, userId: user.id as string, key: user.key };
 }
 
 export function send(token: string, sessionId: string, content: string, clientMsgId: string = randomUUID()) {

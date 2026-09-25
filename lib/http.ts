@@ -78,6 +78,8 @@ export async function parseBody<T>(
         ? "invalid_name"
         : field === "email"
           ? "invalid_email"
+          : field === "key"
+            ? "invalid_key"
           : field === "content" && first?.code === "too_small"
             ? "empty_message"
             : field === "content" && first?.code === "too_big"

@@ -55,7 +55,7 @@ export async function PATCH(request: NextRequest, ctx: Ctx) {
 
 /**
  * Permanently deletes a user with all sessions, messages and browser access
- * links (ON DELETE CASCADE). Requires the user's email as typed confirmation.
+ * links (ON DELETE CASCADE). Requires the user's name as typed confirmation.
  */
 export async function DELETE(request: NextRequest, ctx: Ctx) {
   const { id } = await ctx.params;
@@ -68,9 +68,9 @@ export async function DELETE(request: NextRequest, ctx: Ctx) {
 
   try {
     const result = await withDb({ adminToken: auth.admin.token }, async (c) => {
-      const user = await c.query<{ email: string }>("select email from public.users where id = $1", [id]);
+      const user = await c.query<{ name: string }>("select name from public.users where id = $1", [id]);
       if (!user.rowCount) return "not_found" as const;
-      if (user.rows[0].email !== body.data.confirmEmail) return "confirmation_mismatch" as const;
+      if (user.rows[0].name !== body.data.confirmName) return "confirmation_mismatch" as const;
       await c.query("delete from public.users where id = $1", [id]);
       return "deleted" as const;
     });

@@ -2,10 +2,11 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { Eye, EyeOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import { apiRequest } from "@/lib/api-client";
-import { emailSchema, nameSchema, NAME_MAX } from "@/lib/validation/schemas";
+import { PRIVATE_KEY_LENGTH, privateKeySchema } from "@/lib/validation/schemas";
 import { useReducedMotion } from "@/hooks/use-reduced-motion";
 import type { VisitorSession } from "@/types";
 
@@ -16,7 +17,7 @@ const BOOT: { text: string; tone: "head" | "sys" | "ok" | "plain"; delay: number
   { text: "[ SYSTEM ] Connection interface ready.", tone: "ok", delay: 380 },
   { text: "", tone: "plain", delay: 120 },
   { text: "Welcome, visitor.", tone: "plain", delay: 360 },
-  { text: "Please identify yourself to continue.", tone: "plain", delay: 300 },
+  { text: "Enter your 64-character private key to continue.", tone: "plain", delay: 300 },
 ];
 
 const toneClass = {
@@ -35,12 +36,11 @@ export function EntryTerminal({ existingName }: { existingName: string | null })
   const [phaseRaw, setPhase] = useState<Phase>("boot");
   const shown = reduced ? BOOT.length : shownRaw;
   const phase: Phase = reduced && phaseRaw === "boot" ? (existingName ? "resume" : "form") : phaseRaw;
-  const [name, setName] = useState("");
-  const [email, setEmail] = useState("");
+  const [key, setKey] = useState("");
+  const [reveal, setReveal] = useState(false);
   const [errors, setErrors] = useState<string[]>([]);
   const [progress, setProgress] = useState<string[]>([]);
-  const nameRef = useRef<HTMLInputElement>(null);
-  const emailRef = useRef<HTMLInputElement>(null);
+  const keyRef = useRef<HTMLInputElement>(null);
 
   // Boot sequence. With reduced motion it is skipped entirely (derived below).
   useEffect(() => {
@@ -58,7 +58,7 @@ export function EntryTerminal({ existingName }: { existingName: string | null })
   }, [reduced, existingName]);
 
   useEffect(() => {
-    if (phase === "form") nameRef.current?.focus();
+    if (phase === "form") keyRef.current?.focus();
   }, [phase]);
 
   const skipBoot = () => {
@@ -68,35 +68,33 @@ export function EntryTerminal({ existingName }: { existingName: string | null })
   };
 
   const submit = async () => {
-    const problems: string[] = [];
-    const n = nameSchema.safeParse(name);
-    const e = emailSchema.safeParse(email);
-    if (!n.success) problems.push(n.error.issues[0]?.message ?? "Invalid name.");
-    if (!e.success) problems.push(e.error.issues[0]?.message ?? "Invalid email.");
-    setErrors(problems);
-    if (problems.length) {
-      if (!n.success) nameRef.current?.focus();
-      else if (!e.success) emailRef.current?.focus();
+    const parsed = privateKeySchema.safeParse(key);
+    if (!parsed.success) {
+      setErrors([parsed.error.issues[0]?.message ?? "Invalid private key."]);
+      keyRef.current?.focus();
       return;
     }
+    setErrors([]);
 
     setPhase("connecting");
-    setProgress(["[ SYSTEM ] Verifying identity parameters..."]);
-    const res = await apiRequest<{ user: { name: string; is_new: boolean }; session: VisitorSession }>(
-      "/api/visitor/register",
-      { method: "POST", body: { name, email } },
-    );
+    setProgress(["[ SYSTEM ] Verifying private key..."]);
+    const res = await apiRequest<{ user: { name: string }; session: VisitorSession }>("/api/visitor/login", {
+      method: "POST",
+      body: { key: parsed.data },
+    });
     if (!res.ok) {
       setPhase("form");
       setProgress([]);
       const retry = res.error.retryAfter ? ` Retry in ${res.error.retryAfter}s.` : "";
       setErrors([`${res.error.message}${retry}`]);
+      keyRef.current?.focus();
       return;
     }
-    const { user, session } = res.data;
+    const { session } = res.data;
+    setKey("");
     setProgress((p) => [
       ...p,
-      user.is_new ? "[ SYSTEM ] Identity registered." : "[ SYSTEM ] Identity recognised.",
+      "[ SYSTEM ] Key accepted.",
       `[ SYSTEM ] Allocating session ${session.session_code}...`,
       "[ SYSTEM ] Access granted.",
     ]);
@@ -152,7 +150,7 @@ export function EntryTerminal({ existingName }: { existingName: string | null })
                     Resume session
                   </Button>
                   <Button variant="ghost" onClick={() => void newIdentity()}>
-                    Use a different identity
+                    Use a different key
                   </Button>
                 </div>
               </div>
@@ -167,47 +165,49 @@ export function EntryTerminal({ existingName }: { existingName: string | null })
                   void submit();
                 }}
               >
-                <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-3">
-                  <label htmlFor="entry-name" className="w-32 shrink-0 text-neon">
-                    ENTER NAME:
-                  </label>
-                  <input
-                    id="entry-name"
-                    ref={nameRef}
-                    value={name}
-                    onChange={(e) => setName(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") {
-                        e.preventDefault();
-                        emailRef.current?.focus();
-                      }
-                    }}
-                    maxLength={NAME_MAX + 20}
-                    autoComplete="name"
-                    disabled={busy}
-                    className="h-10 min-w-0 flex-1 rounded-sm border border-line-strong bg-void/80 px-3 text-ink caret-neon outline-none transition-colors placeholder:text-faint focus:border-neon/70 focus:shadow-[0_0_0_3px_rgb(57_255_156/0.12)]"
-                    placeholder="your name"
-                  />
-                </div>
-                <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-3">
-                  <label htmlFor="entry-email" className="w-32 shrink-0 text-neon">
-                    ENTER EMAIL:
-                  </label>
-                  <input
-                    id="entry-email"
-                    ref={emailRef}
-                    type="email"
-                    inputMode="email"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    maxLength={254}
-                    autoComplete="email"
-                    autoCapitalize="none"
-                    spellCheck={false}
-                    disabled={busy}
-                    className="h-10 min-w-0 flex-1 rounded-sm border border-line-strong bg-void/80 px-3 text-ink caret-neon outline-none transition-colors placeholder:text-faint focus:border-neon/70 focus:shadow-[0_0_0_3px_rgb(57_255_156/0.12)]"
-                    placeholder="you@example.com"
-                  />
+                <div className="flex flex-col gap-1.5">
+                  <div className="flex items-baseline justify-between gap-3">
+                    <label htmlFor="entry-key" className="text-neon">
+                      ENTER PRIVATE KEY:
+                    </label>
+                    <span
+                      className={`text-[11px] tabular-nums ${key.trim().length === PRIVATE_KEY_LENGTH ? "text-neon" : "text-faint"}`}
+                      aria-live="polite"
+                    >
+                      {key.trim().length}/{PRIVATE_KEY_LENGTH}
+                    </span>
+                  </div>
+                  <div className="flex gap-2">
+                    <input
+                      id="entry-key"
+                      ref={keyRef}
+                      type={reveal ? "text" : "password"}
+                      value={key}
+                      onChange={(e) => setKey(e.target.value)}
+                      maxLength={PRIVATE_KEY_LENGTH + 8}
+                      autoComplete="off"
+                      autoCapitalize="none"
+                      autoCorrect="off"
+                      spellCheck={false}
+                      disabled={busy}
+                      aria-describedby="entry-key-hint"
+                      className="h-10 min-w-0 flex-1 rounded-sm border border-line-strong bg-void/80 px-3 font-mono text-ink caret-neon outline-none transition-colors placeholder:text-faint focus:border-neon/70 focus:shadow-[0_0_0_3px_rgb(57_255_156/0.12)]"
+                      placeholder="64 characters · 0-9 a-f"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setReveal((v) => !v)}
+                      disabled={busy}
+                      aria-label={reveal ? "Hide key" : "Show key"}
+                      aria-pressed={reveal}
+                      className="flex size-10 shrink-0 items-center justify-center rounded-sm border border-line-strong text-muted transition-colors hover:border-neon/50 hover:text-neon"
+                    >
+                      {reveal ? <EyeOff className="size-4" aria-hidden="true" /> : <Eye className="size-4" aria-hidden="true" />}
+                    </button>
+                  </div>
+                  <p id="entry-key-hint" className="text-[11px] text-faint">
+                    Your key is issued by the administrator.
+                  </p>
                 </div>
 
                 {errors.length > 0 && (
@@ -241,7 +241,7 @@ export function EntryTerminal({ existingName }: { existingName: string | null })
         </section>
 
         <p className="mt-5 text-center text-[11px] leading-relaxed text-faint">
-          Secure channel · Responses may not be immediate · No passwords or sensitive data
+          Secure channel · Responses may not be immediate · Never share your private key
         </p>
       </div>
     </main>

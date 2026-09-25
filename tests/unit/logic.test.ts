@@ -4,7 +4,8 @@ import { formatRelative, sanitizeSearch, toHandle } from "@/lib/format";
 import { likePattern } from "@/lib/db/queries";
 import { checkRateLimit, resetRateLimits } from "@/lib/rate-limit/memory";
 import { buildTimeline, isAwaitingResponse, mergeMessages, mergeSessions, nextAnchor } from "@/lib/terminal/timeline";
-import { registerSchema, sendMessageSchema } from "@/lib/validation/schemas";
+import { formatChange, formatXmr, usdToXmr, WALLET_BALANCE_USD } from "@/lib/market/wallet";
+import { createUserSchema, loginSchema, privateKeySchema, sendMessageSchema } from "@/lib/validation/schemas";
 import type { Message, VisitorSession } from "@/types";
 
 const msg = (id: string, sender: Message["sender_type"], created: string, extra: Partial<Message> = {}): Message => ({
@@ -20,16 +21,25 @@ const msg = (id: string, sender: Message["sender_type"], created: string, extra:
 });
 
 describe("validation", () => {
-  it("normalizes name and email", () => {
-    const r = registerSchema.parse({ name: "  Ada \n  Lovelace ", email: "  ADA@Example.COM " });
-    expect(r).toEqual({ name: "Ada Lovelace", email: "ada@example.com" });
+  it("accepts a 64-character hex private key in any case", () => {
+    const key = "A1b2".repeat(16);
+    expect(privateKeySchema.parse(`  ${key} `)).toBe(key.toLowerCase());
+    expect(loginSchema.parse({ key }).key).toBe(key.toLowerCase());
   });
 
-  it("requires valid values", () => {
-    expect(registerSchema.safeParse({ name: "", email: "a@b.co" }).success).toBe(false);
-    expect(registerSchema.safeParse({ name: "A", email: "nope" }).success).toBe(false);
-    expect(registerSchema.safeParse({ name: "x".repeat(61), email: "a@b.co" }).success).toBe(false);
-    expect(registerSchema.safeParse({ name: "bad\u0007", email: "a@b.co" }).success).toBe(false);
+  it("rejects malformed private keys", () => {
+    expect(privateKeySchema.safeParse("a".repeat(63)).success).toBe(false);
+    expect(privateKeySchema.safeParse("a".repeat(65)).success).toBe(false);
+    expect(privateKeySchema.safeParse("g".repeat(64)).success).toBe(false);
+    expect(privateKeySchema.safeParse(crypto.randomUUID()).success).toBe(false);
+    expect(privateKeySchema.safeParse("").success).toBe(false);
+  });
+
+  it("normalizes and validates user names", () => {
+    expect(createUserSchema.parse({ name: "  Ada \n  Lovelace " })).toEqual({ name: "Ada Lovelace" });
+    expect(createUserSchema.safeParse({ name: "" }).success).toBe(false);
+    expect(createUserSchema.safeParse({ name: "x".repeat(61) }).success).toBe(false);
+    expect(createUserSchema.safeParse({ name: "bad\u0007" }).success).toBe(false);
   });
 
   it("rejects empty messages and bad ids", () => {
@@ -37,6 +47,22 @@ describe("validation", () => {
     expect(sendMessageSchema.safeParse({ ...base, content: "  \r\n " }).success).toBe(false);
     expect(sendMessageSchema.safeParse({ ...base, sessionId: "1; drop table", content: "hi" }).success).toBe(false);
     expect(sendMessageSchema.parse({ ...base, content: " a\r\nb " }).content).toBe("a\nb");
+  });
+});
+
+describe("wallet", () => {
+  it("values the fixed USD balance in XMR", () => {
+    expect(WALLET_BALANCE_USD).toBe(3_000_000);
+    expect(usdToXmr(3_000_000, 500)).toBe(6000);
+    expect(usdToXmr(3_000_000, 553.24)).toBeCloseTo(5422.6014, 4);
+    expect(usdToXmr(3_000_000, 0)).toBe(0);
+    expect(usdToXmr(3_000_000, Number.NaN)).toBe(0);
+  });
+
+  it("formats amounts and the 24h change", () => {
+    expect(formatXmr(5422.63762)).toBe("5,422.6376");
+    expect(formatChange(-0.1234)).toBe("0.12%");
+    expect(formatChange(1.5)).toBe("1.50%");
   });
 });
 

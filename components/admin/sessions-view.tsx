@@ -16,7 +16,7 @@ interface SessionsPage {
   pageSize: number;
 }
 
-const FILTER_KEYS = ["email", "code", "status", "unanswered", "from", "to", "sort"] as const;
+const FILTER_KEYS = ["name", "code", "status", "unanswered", "from", "to", "sort"] as const;
 
 export function SessionsView() {
   const { params, set, hrefWith } = useQueryParams();
@@ -41,7 +41,7 @@ export function SessionsView() {
       <PageHeader title="Sessions" subtitle="All terminal sessions. Filtering and pagination run on the server." />
       <div className="space-y-4 p-4 sm:p-8">
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7 xl:items-end">
-          <SearchInput id="f-email" label="User email" value={get("email")} placeholder="@example.com" onCommit={(v) => set({ email: v })} className="xl:col-span-2" />
+          <SearchInput id="f-name" label="User name" value={get("name")} placeholder="ada" onCommit={(v) => set({ name: v })} className="xl:col-span-2" />
           <SearchInput id="f-code" label="Session code" value={get("code")} placeholder="SESS_…" onCommit={(v) => set({ code: v })} />
           <div className="flex flex-col gap-1">
             <label htmlFor="f-status" className={label}>Status</label>

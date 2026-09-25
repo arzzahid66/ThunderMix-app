@@ -28,8 +28,19 @@ export interface VisitorSession {
 
 export interface VisitorProfile {
   name: string;
-  email: string;
   status: UserStatus;
+}
+
+/** A visitor's wallet: a fixed USD balance valued in XMR at the live rate. */
+export interface WalletQuote {
+  balance_usd: number;
+  balance_xmr: number;
+  price_usd: number;
+  /** Percent change over the last 24 hours, e.g. -0.12. */
+  change_24h: number;
+  source: "coinmarketcap" | "coingecko";
+  /** When the price was last updated at the source (ISO). */
+  updated_at: string;
 }
 
 export interface PublicConfig {
@@ -41,7 +52,7 @@ export interface AdminSessionRow extends VisitorSession {
   user_id: string;
   closed_at: string | null;
   user_name: string;
-  user_email: string;
+  user_key_hint: string;
   user_status: UserStatus;
   /** Set when the visitor deleted the session from their own history. */
   visitor_hidden_at: string | null;
@@ -50,7 +61,8 @@ export interface AdminSessionRow extends VisitorSession {
 export interface AdminUserRow {
   id: string;
   name: string;
-  email: string;
+  /** Last 4 characters of the user's private key. */
+  key_hint: string;
   created_at: string;
   last_seen_at: string;
   status: UserStatus;
@@ -66,7 +78,7 @@ export interface AdminActivityItem {
   session_id: string;
   session_code: string;
   user_name: string;
-  user_email: string;
+  user_key_hint: string;
 }
 
 export interface AdminStats {

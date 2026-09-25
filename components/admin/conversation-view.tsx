@@ -274,8 +274,8 @@ function Conversation({ id }: { id: string }) {
                   <Link href={`/admin/users/${session.user_id}`} className="text-ink hover:text-neon hover:underline">
                     {session.user_name}
                   </Link>
-                  <span className="text-muted"> · EMAIL: </span>
-                  <span className="text-ink">{session.user_email}</span>
+                  <span className="text-muted"> · KEY: </span>
+                  <span className="font-mono text-ink">…{session.user_key_hint}</span>
                 </p>
                 <p className="text-muted">
                   CREATED: <TimeText iso={session.created_at} mode="datetime" className="text-ink" /> · {session.message_count} messages
@@ -434,7 +434,7 @@ function Conversation({ id }: { id: string }) {
         title="Block user"
         description={
           <>
-            <span className="text-ink">{session?.user_email}</span> will be unable to send messages or open sessions from any
+            <span className="text-ink">{session?.user_name}</span> will be unable to send messages or open sessions from any
             browser. History is kept and you can unblock later.
           </>
         }

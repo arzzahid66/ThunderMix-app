@@ -15,7 +15,7 @@ import type {
 
 const SESSION_COLS = `id, session_code, created_at, last_activity_at, updated_at, status, message_count, unanswered_count`;
 const MESSAGE_COLS = `id, session_id, sender_type, content, created_at, updated_at, delivery_status, client_msg_id`;
-const ADMIN_SESSION_COLS = `${SESSION_COLS}, user_id, closed_at, user_name, user_email, user_status, visitor_hidden_at`;
+const ADMIN_SESSION_COLS = `${SESSION_COLS}, user_id, closed_at, user_name, user_key_hint, user_status, visitor_hidden_at`;
 
 export const PAGE_SIZE = 20;
 
@@ -85,7 +85,7 @@ export async function listAdminUsers(c: PoolClient, f: UserFilters): Promise<Pag
   const params: unknown[] = [];
   if (f.q) {
     params.push(likePattern(f.q));
-    where.push(`(name ilike $${params.length} or email ilike $${params.length})`);
+    where.push(`(name ilike $${params.length} or key_hint ilike $${params.length})`);
   }
   if (f.status) {
     params.push(f.status);
@@ -93,7 +93,7 @@ export async function listAdminUsers(c: PoolClient, f: UserFilters): Promise<Pag
   }
   const whereSql = where.length ? `where ${where.join(" and ")}` : "";
   const order =
-    f.sort === "newest" ? "created_at desc" : f.sort === "name" ? "lower(name) asc, email asc" : "last_seen_at desc";
+    f.sort === "newest" ? "created_at desc" : f.sort === "name" ? "lower(name) asc, created_at desc" : "last_seen_at desc";
   const page = Math.max(1, f.page ?? 1);
 
   const total = await c.query<{ n: number }>(`select count(*)::int as n from public.admin_user_list ${whereSql}`, params);
@@ -111,7 +111,7 @@ export async function getAdminUser(c: PoolClient, id: string) {
 }
 
 export interface SessionFilters {
-  email?: string;
+  name?: string;
   code?: string;
   status?: "active" | "closed";
   unanswered?: boolean;
@@ -130,7 +130,7 @@ export async function listAdminSessions(c: PoolClient, f: SessionFilters): Promi
     params.push(value);
     where.push(sql.replace("?", `$${params.length}`));
   };
-  if (f.email) add("user_email ilike ?", likePattern(f.email));
+  if (f.name) add("user_name ilike ?", likePattern(f.name));
   if (f.code) add("session_code ilike ?", likePattern(f.code.toUpperCase()));
   if (f.status) add("status = ?::public.session_status", f.status);
   if (f.unanswered) where.push("unanswered_count > 0");

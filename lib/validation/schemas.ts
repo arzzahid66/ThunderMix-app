@@ -38,9 +38,26 @@ export const emailSchema = z
       .regex(/^[a-z0-9._%+'-]+@[a-z0-9-]+(\.[a-z0-9-]+)*\.[a-z]{2,}$/, "Enter a valid email address."),
   );
 
-export const registerSchema = z.object({
+export const PRIVATE_KEY_LENGTH = 64;
+
+export const privateKeySchema = z
+  .string()
+  .transform((v) => v.trim().toLowerCase())
+  .pipe(
+    z
+      .string()
+      .regex(
+        new RegExp(`^[0-9a-f]{${PRIVATE_KEY_LENGTH}}$`),
+        `Key must be exactly ${PRIVATE_KEY_LENGTH} characters (0-9, a-f).`,
+      ),
+  );
+
+export const loginSchema = z.object({
+  key: privateKeySchema,
+});
+
+export const createUserSchema = z.object({
   name: nameSchema,
-  email: emailSchema,
 });
 
 export const messageContentSchema = z
@@ -68,7 +85,7 @@ export const userStatusSchema = z.object({
 });
 
 export const deleteUserSchema = z.object({
-  confirmEmail: emailSchema,
+  confirmName: nameSchema,
 });
 
 export const settingsSchema = z.object({

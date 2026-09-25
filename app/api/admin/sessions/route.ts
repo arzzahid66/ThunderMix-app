@@ -10,7 +10,7 @@ export const dynamic = "force-dynamic";
 const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 
 const querySchema = z.object({
-  email: z.string().trim().max(254).optional(),
+  name: z.string().trim().max(100).optional(),
   code: z.string().trim().max(20).optional(),
   status: z.enum(["active", "closed"]).optional(),
   unanswered: z.enum(["1", "true"]).optional(),
@@ -35,7 +35,7 @@ export async function GET(request: NextRequest) {
   try {
     const page = await withDb({ adminToken: auth.admin.token }, (c) =>
       listAdminSessions(c, {
-        email: q.email,
+        name: q.name,
         code: q.code,
         status: q.status,
         unanswered: !!q.unanswered,

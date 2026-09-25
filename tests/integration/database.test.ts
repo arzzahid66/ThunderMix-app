@@ -8,12 +8,14 @@ import {
   attempt,
   newToken,
   owner,
+  createUser,
+  login,
+  newKey,
   register,
   resetDatabase,
   rows,
   send,
   TEST_URL,
-  uniqueEmail,
 } from "./helpers";
 
 let admin: string;
@@ -28,30 +30,36 @@ afterAll(async () => {
   await globalThis.__tpPool?.end();
 });
 
-describe("registration & identity", () => {
-  it("creates a user, normalizes the email and opens a session", async () => {
-    const email = uniqueEmail("norm");
-    const result = await register(newToken(), "  Ada   Lovelace ", `  ${email.toUpperCase()} `);
+describe("private key login & identity", () => {
+  it("admins create users; the key signs in and opens a session", async () => {
+    const key = newKey();
+    const created = await attempt<string>({ adminToken: admin }, "select public.admin_create_user($1, $2)", [
+      "  Ada   Lovelace ",
+      key,
+    ]);
+    expect(created.error).toBeNull();
 
-    expect(result.user).toEqual({ name: "Ada Lovelace", is_new: true });
-    expect(result.session.session_code).toMatch(/^SESS_[A-Z0-9]{6}$/);
-    const { rows: users } = await owner.query("select email, name from users where email = $1", [email]);
-    expect(users).toEqual([{ email, name: "Ada Lovelace" }]);
+    const result = await login(newToken(), key);
+    expect(result.data?.user).toEqual({ name: "Ada Lovelace" });
+    expect(result.data?.session.session_code).toMatch(/^SESS_[A-Z0-9]{6}$/);
+    const { rows: users } = await owner.query("select name, key_hint from users where id = $1", [created.data]);
+    expect(users).toEqual([{ name: "Ada Lovelace", key_hint: key.slice(-4) }]);
   });
 
-  it("reuses the existing user for the same email and never duplicates it", async () => {
-    const email = uniqueEmail("dup");
-    await register(newToken(), "First", email);
-    const second = await register(newToken(), "Impostor Name", ` ${email.toUpperCase()}`);
-
-    expect(second.user).toEqual({ name: "First", is_new: false }); // unverified visitors cannot rename a user
-    const { rows: count } = await owner.query("select count(*)::int as n from users where email = $1", [email]);
-    expect(count[0].n).toBe(1);
+  it("accepts the key in any case and with surrounding spaces", async () => {
+    const { key } = await createUser("Case");
+    expect((await login(newToken(), `  ${key.toUpperCase()} `)).error).toBeNull();
   });
 
-  it("stores only a hash of the browser token", async () => {
+  it("stores only hashes of the key and the browser token", async () => {
     const token = newToken();
-    await register(token, "Hash", uniqueEmail("hash"));
+    const { key } = await register(token, "Hash");
+    expect((await owner.query("select 1 from users where access_key_hash = $1", [key])).rows).toHaveLength(0);
+    const { rows: keyHashed } = await owner.query(
+      "select 1 from users where access_key_hash = encode(sha256(convert_to($1, 'UTF8')), 'hex')",
+      [key],
+    );
+    expect(keyHashed).toHaveLength(1);
     const { rows: found } = await owner.query("select token_hash from visitor_access where token_hash = $1", [token]);
     expect(found).toHaveLength(0);
     const { rows: hashed } = await owner.query(
@@ -61,28 +69,51 @@ describe("registration & identity", () => {
     expect(hashed).toHaveLength(1);
   });
 
-  it("rejects invalid names, emails and missing/short tokens", async () => {
-    const t = { visitorToken: newToken() };
-    const q = "select public.visitor_register($1, $2)";
-    expect((await attempt(t, q, ["Ok", "not-an-email"])).error?.message).toBe("TP:invalid_email");
-    expect((await attempt(t, q, ["   ", uniqueEmail()])).error?.message).toBe("TP:invalid_name");
-    expect((await attempt(t, q, ["x".repeat(61), uniqueEmail()])).error?.message).toBe("TP:invalid_name");
-    expect((await attempt({}, q, ["X", uniqueEmail()])).error?.message).toBe("TP:not_authenticated");
-    expect((await attempt({ visitorToken: "short" }, q, ["X", uniqueEmail()])).error?.message).toBe(
-      "TP:not_authenticated",
-    );
+  it("rejects malformed and unknown keys and missing/short tokens", async () => {
+    const t = newToken();
+    expect((await login(t, "a".repeat(63))).error?.message).toBe("TP:invalid_key");
+    expect((await login(t, "z".repeat(64))).error?.message).toBe("TP:invalid_key");
+    expect((await login(t, newKey())).error?.message).toBe("TP:invalid_key");
+    const { key } = await createUser("NoToken");
+    const q = "select public.visitor_login($1)";
+    expect((await attempt({}, q, [key])).error?.message).toBe("TP:not_authenticated");
+    expect((await attempt({ visitorToken: "short" }, q, [key])).error?.message).toBe("TP:not_authenticated");
   });
 
-  it("refuses to link one browser token to a second email", async () => {
+  it("only admins can create users or regenerate keys", async () => {
+    const visitor = { visitorToken: newToken() };
+    const create = await attempt(visitor, "select public.admin_create_user('X', $1)", [newKey()]);
+    expect(create.error?.message).toBe("TP:forbidden");
+    const { id } = await createUser("Target");
+    const regen = await attempt(visitor, "select public.admin_regenerate_key($1, $2)", [id, newKey()]);
+    expect(regen.error?.message).toBe("TP:forbidden");
+    const bad = await attempt({ adminToken: admin }, "select public.admin_create_user('X', 'not-a-key')");
+    expect(bad.error?.message).toBe("TP:invalid_key");
+  });
+
+  it("refuses to link one browser token to a second user", async () => {
     const token = newToken();
-    await register(token, "One", uniqueEmail("one"));
-    const res = await attempt({ visitorToken: token }, "select public.visitor_register($1, $2)", ["Two", uniqueEmail()]);
-    expect(res.error?.message).toBe("TP:identity_mismatch");
+    await register(token, "One");
+    const { key } = await createUser("Two");
+    expect((await login(token, key)).error?.message).toBe("TP:identity_mismatch");
+  });
+
+  it("regenerating a key revokes the old key and every browser that used it", async () => {
+    const token = newToken();
+    const { userId, key, session } = await register(token, "Rotate");
+    const fresh = newKey();
+    const res = await attempt({ adminToken: admin }, "select public.admin_regenerate_key($1, $2)", [userId, fresh]);
+    expect(res.error).toBeNull();
+
+    expect(await rows({ visitorToken: token }, "select id from sessions")).toHaveLength(0);
+    expect((await send(token, session.id, "still here?")).error?.message).toBe("TP:no_access");
+    expect((await login(newToken(), key)).error?.message).toBe("TP:invalid_key");
+    expect((await login(newToken(), fresh)).error).toBeNull();
   });
 
   it("revoked tokens (exit) lose access", async () => {
     const token = newToken();
-    const { session } = await register(token, "Exit", uniqueEmail("exit"));
+    const { session } = await register(token, "Exit");
     await attempt({ visitorToken: token }, "select public.visitor_logout()");
     expect(await rows({ visitorToken: token }, "select id from sessions")).toHaveLength(0);
     expect((await send(token, session.id, "hi")).error?.message).toBe("TP:no_access");
@@ -93,13 +124,15 @@ describe("row level security", () => {
   const tokenA = newToken();
   const tokenB = newToken();
   let sessionA: string;
-  const sharedEmail = uniqueEmail("shared");
+  let sharedKey: string;
 
   beforeAll(async () => {
-    sessionA = (await register(tokenA, "Alice", sharedEmail)).session.id;
+    const a = await register(tokenA, "Alice");
+    sessionA = a.session.id;
+    sharedKey = a.key;
     expect((await send(tokenA, sessionA, "private message from A")).error).toBeNull();
-    // Visitor B claims the SAME email from another browser.
-    await register(tokenB, "Mallory", sharedEmail);
+    // Visitor B signs in with the SAME key from another browser.
+    await register(tokenB, "Alice", sharedKey);
   });
 
   it("callers without a credential can read nothing", async () => {
@@ -117,7 +150,7 @@ describe("row level security", () => {
     expect(await rows(forged, "select * from users")).toHaveLength(0);
   });
 
-  it("the same email in another browser does NOT reveal the first browser's history", async () => {
+  it("the same key in another browser does NOT reveal the first browser's history", async () => {
     const sessions = await rows<{ id: string }>({ visitorToken: tokenB }, "select id from sessions");
     expect(sessions.map((s) => s.id)).not.toContain(sessionA);
     expect(await rows({ visitorToken: tokenB }, "select * from messages where session_id = $1", [sessionA])).toHaveLength(0);
@@ -196,7 +229,7 @@ describe("row level security", () => {
     const [session] = await rows<Record<string, unknown>>(id, "select * from admin_session_list where id = $1", [
       sessionA,
     ]);
-    expect(session.user_email).toBe(sharedEmail);
+    expect(session.user_key_hint).toBe(sharedKey.slice(-4));
     expect(session.unanswered_count).toBe(1);
 
     const reply = await attempt(id, "select public.admin_send_reply($1, 'Hello from the operator', $2)", [
@@ -260,7 +293,7 @@ describe("admin authentication", () => {
 describe("message rules", () => {
   it("is idempotent for a repeated client message id", async () => {
     const token = newToken();
-    const { session } = await register(token, "Idem", uniqueEmail("idem"));
+    const { session } = await register(token, "Idem");
     const key = randomUUID();
     const first = await send(token, session.id, "once only", key);
     const second = await send(token, session.id, "once only", key);
@@ -272,14 +305,14 @@ describe("message rules", () => {
 
   it("rejects an identical message re-sent within seconds", async () => {
     const token = newToken();
-    const { session } = await register(token, "Dup", uniqueEmail("dupmsg"));
+    const { session } = await register(token, "Dup");
     expect((await send(token, session.id, "same text")).error).toBeNull();
     expect((await send(token, session.id, "same text")).error?.message).toBe("TP:duplicate_message");
   });
 
   it("rejects empty and over-length messages and strips control characters", async () => {
     const token = newToken();
-    const { session } = await register(token, "Len", uniqueEmail("len"));
+    const { session } = await register(token, "Len");
     expect((await send(token, session.id, "   \n  ")).error?.message).toBe("TP:empty_message");
     const tooLong = await send(token, session.id, "x".repeat(2001));
     expect(tooLong.error?.message).toBe("TP:message_too_long");
@@ -289,14 +322,14 @@ describe("message rules", () => {
 
   it("stores markup verbatim (the UI renders it as text, never HTML)", async () => {
     const token = newToken();
-    const { session } = await register(token, "Xss", uniqueEmail("xss"));
+    const { session } = await register(token, "Xss");
     const payload = `<img src=x onerror="alert(1)"><script>alert(2)</script>`;
     expect((await send(token, session.id, payload)).data?.content).toBe(payload);
   });
 
   it("enforces the per-user rate limit (10/min by default)", async () => {
     const token = newToken();
-    const { session } = await register(token, "Rate", uniqueEmail("rate"));
+    const { session } = await register(token, "Rate");
     for (let i = 0; i < 10; i++) expect((await send(token, session.id, `message ${i}`)).error).toBeNull();
     const limited = await send(token, session.id, "one too many");
     expect(limited.error?.message).toBe("TP:rate_limited");
@@ -304,32 +337,30 @@ describe("message rules", () => {
   });
 
   it("rate limit is per user across sessions and browsers", async () => {
-    const email = uniqueEmail("rate2");
     const t1 = newToken();
     const t2 = newToken();
-    const s1 = (await register(t1, "R", email)).session.id;
-    const s2 = (await register(t2, "R", email)).session.id;
+    const first = await register(t1, "R");
+    const s1 = first.session.id;
+    const s2 = (await register(t2, "R", first.key)).session.id;
     for (let i = 0; i < 10; i++) expect((await send(i % 2 ? t1 : t2, i % 2 ? s1 : s2, `m${i}`)).error).toBeNull();
     expect((await send(t1, s1, "over")).error?.message).toBe("TP:rate_limited");
   });
 
-  it("blocks sending, new sessions and re-registration for blocked users", async () => {
+  it("blocks sending, new sessions and signing in for blocked users", async () => {
     const token = newToken();
-    const email = uniqueEmail("blocked");
-    const { session } = await register(token, "Blocked", email);
-    await rows({ adminToken: admin }, "update users set status = 'blocked' where email = $1", [email]);
+    const { session, userId, key } = await register(token, "Blocked");
+    await rows({ adminToken: admin }, "update users set status = 'blocked' where id = $1", [userId]);
 
     expect((await send(token, session.id, "hello?")).error?.message).toBe("TP:user_blocked");
     expect((await attempt({ visitorToken: token }, "select public.visitor_create_session()")).error?.message).toBe(
       "TP:user_blocked",
     );
-    const other = await attempt({ visitorToken: newToken() }, "select public.visitor_register('B', $1)", [email]);
-    expect(other.error?.message).toBe("TP:user_blocked");
+    expect((await login(newToken(), key)).error?.message).toBe("TP:user_blocked");
   });
 
   it("rejects messages to closed sessions and logs a system notice", async () => {
     const token = newToken();
-    const { session } = await register(token, "Closed", uniqueEmail("closed"));
+    const { session } = await register(token, "Closed");
     const closed = await attempt<Record<string, unknown>>(
       { adminToken: admin },
       "select public.admin_set_session_status($1, 'closed')",
@@ -342,7 +373,7 @@ describe("message rules", () => {
 
   it("supports multiple independent sessions per visitor", async () => {
     const token = newToken();
-    const { session } = await register(token, "Multi", uniqueEmail("multi"));
+    const { session } = await register(token, "Multi");
     const second = await attempt<{ id: string }>({ visitorToken: token }, "select public.visitor_create_session()");
     expect(second.data?.id).not.toBe(session.id);
     expect(await rows({ visitorToken: token }, "select id from sessions")).toHaveLength(2);
@@ -351,8 +382,8 @@ describe("message rules", () => {
   it("visitors can delete their own sessions; operators keep the record", async () => {
     const token = newToken();
     const stranger = newToken();
-    await register(stranger, "Stranger", uniqueEmail("delsess-stranger"));
-    const { session } = await register(token, "Deleter", uniqueEmail("delsess"));
+    await register(stranger, "Stranger");
+    const { session } = await register(token, "Deleter");
     await send(token, session.id, "please forget this");
 
     const q = "select public.visitor_delete_session($1)";
@@ -378,7 +409,7 @@ describe("message rules", () => {
 
   it("limits how many sessions a browser can open per hour", async () => {
     const token = newToken();
-    await register(token, "Spam", uniqueEmail("spam"));
+    await register(token, "Spam");
     for (let i = 0; i < 19; i++) {
       expect((await attempt({ visitorToken: token }, "select public.visitor_create_session()")).error).toBeNull();
     }
@@ -389,8 +420,8 @@ describe("message rules", () => {
   it("lets visitors acknowledge operator replies only in their own sessions", async () => {
     const token = newToken();
     const stranger = newToken();
-    await register(stranger, "Stranger", uniqueEmail("stranger"));
-    const { session } = await register(token, "Ack", uniqueEmail("ack"));
+    await register(stranger, "Stranger");
+    const { session } = await register(token, "Ack");
     await send(token, session.id, "ping");
     await attempt({ adminToken: admin }, "select public.admin_send_reply($1, 'pong', $2)", [session.id, randomUUID()]);
 
@@ -401,10 +432,9 @@ describe("message rules", () => {
 
   it("deleting a user cascades to sessions, messages and access links", async () => {
     const token = newToken();
-    const email = uniqueEmail("delete");
-    const { session } = await register(token, "Gone", email);
+    const { session, userId } = await register(token, "Gone");
     await send(token, session.id, "bye");
-    const deleted = await rows({ adminToken: admin }, "delete from users where email = $1 returning id", [email]);
+    const deleted = await rows({ adminToken: admin }, "delete from users where id = $1 returning id", [userId]);
     expect(deleted).toHaveLength(1);
     const { rows: left } = await owner.query(
       "select (select count(*) from sessions where id = $1)::int + (select count(*) from messages where session_id = $1)::int as n",

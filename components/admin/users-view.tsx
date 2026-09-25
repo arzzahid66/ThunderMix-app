@@ -1,13 +1,17 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { UserPlus } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { UserStatusBadge } from "@/components/ui/status-badge";
 import { TimeText } from "@/components/ui/time-text";
 import { useApi, useDebounced } from "@/hooks/use-api";
 import { useQueryParams } from "@/hooks/use-query-params";
 import type { AdminUserRow } from "@/types";
 import { useAdminEvents } from "./admin-realtime";
+import { CreateUserDialog } from "./key-dialogs";
 import { EmptyState, ErrorNotice, inputCls, LoadingRow, PageHeader, Pagination, Panel, tdCls, thCls } from "./primitives";
 import { SearchInput } from "./search-input";
 
@@ -20,6 +24,7 @@ interface UsersPage {
 
 export function UsersView() {
   const router = useRouter();
+  const [creating, setCreating] = useState(false);
   const { params, set, hrefWith } = useQueryParams();
   const q = params.get("q") ?? "";
   const status = params.get("status") ?? "";
@@ -35,14 +40,23 @@ export function UsersView() {
 
   return (
     <>
-      <PageHeader title="Users" subtitle="One record per email address. Search, sort and manage visitors." />
+      <PageHeader
+        title="Users"
+        subtitle="Each user signs in with a private key issued here. Search, sort and manage visitors."
+        actions={
+          <Button variant="primary" size="sm" onClick={() => setCreating(true)}>
+            <UserPlus className="size-3.5" aria-hidden="true" /> Create user
+          </Button>
+        }
+      />
+      <CreateUserDialog open={creating} onClose={() => setCreating(false)} onCreated={() => void users.reload()} />
       <div className="space-y-4 p-4 sm:p-8">
         <div className="flex flex-wrap items-end gap-3">
           <SearchInput
             id="user-search"
-            label="Search name or email"
+            label="Search name or key ending"
             value={q}
-            placeholder="ada / @example.com"
+            placeholder="ada / a1f3"
             onCommit={(v) => set({ q: v })}
             className="w-full sm:w-72"
           />
@@ -62,7 +76,7 @@ export function UsersView() {
             </label>
             <select id="user-sort" value={sort} onChange={(e) => set({ sort: e.target.value })} className={inputCls}>
               <option value="activity">Latest activity</option>
-              <option value="newest">Newest registered</option>
+              <option value="newest">Newest created</option>
               <option value="name">Name A–Z</option>
             </select>
           </div>
@@ -81,11 +95,11 @@ export function UsersView() {
                   <thead className="border-b border-line">
                     <tr>
                       <th scope="col" className={thCls}>Name</th>
-                      <th scope="col" className={thCls}>Email</th>
+                      <th scope="col" className={thCls}>Key</th>
                       <th scope="col" className={`${thCls} text-right`}>Sessions</th>
                       <th scope="col" className={`${thCls} text-right`}>Awaiting</th>
                       <th scope="col" className={thCls}>Last activity</th>
-                      <th scope="col" className={thCls}>Registered</th>
+                      <th scope="col" className={thCls}>Created</th>
                       <th scope="col" className={thCls}>Status</th>
                       <th scope="col" className={thCls}><span className="sr-only">Actions</span></th>
                     </tr>
@@ -98,7 +112,7 @@ export function UsersView() {
                         onClick={() => router.push(`/admin/users/${u.id}`)}
                       >
                         <td className={`${tdCls} max-w-[14rem] truncate text-ink`}>{u.name}</td>
-                        <td className={`${tdCls} max-w-[16rem] truncate text-muted`}>{u.email}</td>
+                        <td className={`${tdCls} font-mono text-muted`}>…{u.key_hint}</td>
                         <td className={`${tdCls} text-right tabular-nums`}>{u.session_count}</td>
                         <td className={`${tdCls} text-right tabular-nums ${u.unanswered_count ? "text-amber" : "text-faint"}`}>
                           {u.unanswered_count || "—"}
