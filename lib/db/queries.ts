@@ -53,7 +53,7 @@ export async function visitorChangesSince(c: PoolClient, since: string) {
   const messages = await c.query<Message>(
     `select ${MESSAGE_COLS} from public.messages
      where updated_at > $1
-       and session_id in (select id from public.sessions where visitor_access_id = private.current_visitor_access_id())
+       and private.visitor_owns_session(session_id)
      order by updated_at asc limit 200`,
     [since],
   );

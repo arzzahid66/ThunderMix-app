@@ -13,7 +13,6 @@ export const COOKIE = {
   admin: secure ? "__Host-tp_admin" : "tp_admin",
 } as const;
 
-export const VISITOR_TTL_SECONDS = 60 * 60 * 24 * 180; // 180 days
 export const ADMIN_TTL_HOURS = 12;
 
 export function generateToken(): string {
@@ -45,7 +44,8 @@ export async function setVisitorCookie(token: string) {
     secure,
     sameSite: "lax",
     path: "/",
-    maxAge: VISITOR_TTL_SECONDS,
+    // No maxAge: a browser-session cookie, gone when the browser closes. Each
+    // tab additionally requires the key (see lib/terminal/tab-auth.ts).
   });
 }
 

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { ChevronDown, RefreshCw, Wallet } from "lucide-react";
+import { ChevronDown, RefreshCw, Wallet, X } from "lucide-react";
 import { formatChange, formatUsd, formatXmr, WALLET_BALANCE_USD } from "@/lib/market/wallet";
 import type { useXmrWallet } from "@/hooks/use-xmr-wallet";
 
@@ -19,15 +19,22 @@ function useSecondsAgo(since: number | null): number | null {
   return since === null ? null : Math.max(0, Math.round((now - since) / 1000));
 }
 
-export function WalletPanel({ wallet, error, loading, checkedAt, refresh }: WalletState) {
+export function WalletPanel({
+  wallet,
+  error,
+  loading,
+  checkedAt,
+  refresh,
+  onClose,
+}: WalletState & { onClose?: () => void }) {
   const [open, setOpen] = useState(false);
   const ago = useSecondsAgo(checkedAt);
   const up = (wallet?.change_24h ?? 0) >= 0;
 
   return (
     <section aria-label="Wallet" className="border-b border-line">
-      <div className="flex items-center justify-between px-4 pt-3">
-        <h2 className="flex items-center gap-1.5 text-[11px] uppercase tracking-[0.2em] text-muted">
+      <div className="flex items-center px-4 pt-3">
+        <h2 className="mr-auto flex items-center gap-1.5 text-[11px] uppercase tracking-[0.2em] text-muted">
           <Wallet className="size-3.5" aria-hidden="true" /> Wallet
         </h2>
         <button
@@ -40,6 +47,11 @@ export function WalletPanel({ wallet, error, loading, checkedAt, refresh }: Wall
         >
           <RefreshCw className={`size-3.5 ${loading ? "animate-spin" : ""}`} aria-hidden="true" />
         </button>
+        {onClose && (
+          <button type="button" onClick={onClose} aria-label="Close wallet" className="ml-1 rounded-sm p-1 text-muted hover:text-ink">
+            <X className="size-4" aria-hidden="true" />
+          </button>
+        )}
       </div>
 
       <div className="space-y-2.5 p-3">

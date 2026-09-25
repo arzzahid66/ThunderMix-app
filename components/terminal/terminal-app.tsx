@@ -2,17 +2,16 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { LogOut, Plus, Wallet } from "lucide-react";
+import { LogOut, Wallet } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { ConnectionBadge } from "@/components/ui/status-badge";
 import { Spinner } from "@/components/ui/spinner";
 import { apiRequest } from "@/lib/api-client";
 import { toHandle } from "@/lib/format";
+import { clearTabSignedIn } from "@/lib/terminal/tab-auth";
 import { useTerminalSession } from "@/hooks/use-terminal-session";
 import { useXmrWallet } from "@/hooks/use-xmr-wallet";
-import type { VisitorSession } from "@/types";
-import { SessionPanel } from "./session-panel";
 import { TerminalInput, type TerminalInputHandle } from "./terminal-input";
 import { TerminalOutput } from "./terminal-output";
 import { WalletPanel } from "./wallet-panel";
@@ -20,8 +19,6 @@ import { WalletPanel } from "./wallet-panel";
 const HELP = [
   "AVAILABLE COMMANDS",
   "  /help       show this help",
-  "  /new        open a new session",
-  "  /sessions   list your sessions",
   "  /clear      clear the screen (history is kept)",
   "",
   "Anything else you type is transmitted as a message.",
@@ -36,9 +33,6 @@ export function TerminalApp() {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [confirmExit, setConfirmExit] = useState(false);
   const [exiting, setExiting] = useState(false);
-  const [deleteTarget, setDeleteTarget] = useState<VisitorSession | null>(null);
-  const [deleting, setDeleting] = useState(false);
-  const [deleteError, setDeleteError] = useState<string | null>(null);
   const handle = toHandle(t.profile?.name);
 
   const history = useMemo(() => {
@@ -47,7 +41,7 @@ export function TerminalApp() {
     return [...sent.slice(-30), ...failed];
   }, [t.messages, t.pending]);
 
-  // Blocked notice, once per active session.
+  // Blocked notice, once per conversation.
   const blocked = t.profile?.status === "blocked";
   const { activeId, addLocal } = t;
   useEffect(() => {
@@ -67,20 +61,6 @@ export function TerminalApp() {
         t.clearScreen(sessionId);
         return true;
       }
-      if (command === "/new") {
-        void t.createSession();
-        return true;
-      }
-      if (command === "/sessions") {
-        t.addLocal(sessionId, "info", [
-          `SESSIONS (${t.sessions.length})`,
-          ...t.sessions.map(
-            (s) => `  ${s.id === sessionId ? "▸" : " "} ${s.session_code}  ${s.status.toUpperCase().padEnd(6)}  ${s.message_count} msg`,
-          ),
-        ]);
-        setDrawerOpen(true);
-        return true;
-      }
       return t.send(value);
     },
     [t],
@@ -88,19 +68,10 @@ export function TerminalApp() {
 
   const exit = async () => {
     setExiting(true);
+    clearTabSignedIn();
     await apiRequest("/api/visitor/logout", { method: "POST", body: {} });
     router.replace("/");
     router.refresh();
-  };
-
-  const confirmDelete = async () => {
-    if (!deleteTarget) return;
-    setDeleting(true);
-    setDeleteError(null);
-    const error = await t.deleteSession(deleteTarget.id);
-    setDeleting(false);
-    if (error) setDeleteError(error.message);
-    else setDeleteTarget(null);
   };
 
   const closedOrBlocked = t.activeSession?.status === "closed" || blocked;
@@ -111,7 +82,13 @@ export function TerminalApp() {
       <FullScreenNotice
         lines={[`[ ERROR ] ${t.fatal.message}`, "[ SYSTEM ] Connection terminated."]}
         action={
-          <Button variant="primary" onClick={() => router.replace("/")}>
+          <Button
+            variant="primary"
+            onClick={() => {
+              clearTabSignedIn();
+              router.replace("/");
+            }}
+          >
             Enter key again
           </Button>
         }
@@ -120,12 +97,7 @@ export function TerminalApp() {
   }
 
   if (!t.booted) {
-    return (
-      <FullScreenNotice
-        lines={["[ SYSTEM ] Restoring terminal session…"]}
-        spinner
-      />
-    );
+    return <FullScreenNotice lines={["[ SYSTEM ] Restoring conversation…"]} spinner />;
   }
 
   return (
@@ -144,80 +116,35 @@ export function TerminalApp() {
         </h1>
         <div className="ml-auto flex items-center gap-2">
           <ConnectionBadge status={t.status} compact />
-          {t.activeSession && (
-            <span className="hidden text-[11px] uppercase tracking-wider text-muted md:inline">
-              Session: <span className="text-cyan">{t.activeSession.session_code}</span>
-            </span>
-          )}
           <Button
             variant="ghost"
             size="sm"
             className="lg:hidden"
             onClick={() => setDrawerOpen(true)}
-            aria-label="Open wallet and session history"
+            aria-label="Open wallet"
             aria-expanded={drawerOpen}
           >
             <Wallet className="size-4" aria-hidden="true" />
-          </Button>
-          <Button variant="ghost" size="sm" onClick={() => void t.createSession()} disabled={t.creating || blocked} aria-label="New session">
-            <Plus className="size-4" aria-hidden="true" />
-            <span className="hidden sm:inline">New</span>
           </Button>
           <Button variant="ghost" size="sm" onClick={() => setConfirmExit(true)} aria-label="Exit portal">
             <LogOut className="size-4" aria-hidden="true" />
             <span className="hidden sm:inline">Exit</span>
           </Button>
         </div>
-        {t.activeSession && (
-          <p className="w-full text-[10px] uppercase tracking-wider text-muted md:hidden">
-            Session: <span className="text-cyan">{t.activeSession.session_code}</span>
-          </p>
-        )}
       </header>
 
       <div className="flex min-h-0 flex-1">
-        {/* Desktop session panel */}
-        <aside className="hidden w-72 shrink-0 flex-col border-r border-line bg-panel/60 lg:flex">
+        {/* Desktop wallet */}
+        <aside className="hidden w-72 shrink-0 flex-col overflow-y-auto border-r border-line bg-panel/60 lg:flex">
           <WalletPanel {...wallet} />
-          <div className="min-h-0 flex-1">
-            <SessionPanel
-              sessions={t.sessions}
-              activeId={t.activeId}
-              unread={t.unread}
-              creating={t.creating}
-              canCreate={!blocked}
-              onSelect={t.selectSession}
-              onCreate={() => void t.createSession()}
-              onDelete={setDeleteTarget}
-            />
-          </div>
         </aside>
 
         {/* Mobile drawer */}
         {drawerOpen && (
-          <div className="fixed inset-0 z-40 lg:hidden" role="dialog" aria-modal="true" aria-label="Wallet and session history">
-            <button type="button" aria-label="Close session list" className="absolute inset-0 bg-black/70" onClick={() => setDrawerOpen(false)} />
-            <div className="absolute inset-y-0 left-0 flex w-[min(85vw,20rem)] flex-col border-r border-line bg-panel shadow-2xl animate-reveal">
-              <WalletPanel {...wallet} />
-              <div className="min-h-0 flex-1">
-                <SessionPanel
-                  sessions={t.sessions}
-                  activeId={t.activeId}
-                  unread={t.unread}
-                  creating={t.creating}
-                  canCreate={!blocked}
-                  onSelect={(id) => {
-                    t.selectSession(id);
-                    setDrawerOpen(false);
-                  }}
-                  onCreate={() => {
-                    void t.createSession();
-                    setDrawerOpen(false);
-                  }}
-                  onDelete={setDeleteTarget}
-                  onClose={() => setDrawerOpen(false)}
-                />
-              </div>
+          <div className="fixed inset-0 z-40 lg:hidden" role="dialog" aria-modal="true" aria-label="Wallet">
+            <button type="button" aria-label="Close wallet" className="absolute inset-0 bg-black/70" onClick={() => setDrawerOpen(false)} />
+            <div className="absolute inset-y-0 left-0 flex w-[min(85vw,20rem)] flex-col overflow-y-auto border-r border-line bg-panel shadow-2xl animate-reveal">
+              <WalletPanel {...wallet} onClose={() => setDrawerOpen(false)} />
             </div>
           </div>
         )}
@@ -241,11 +168,16 @@ export function TerminalApp() {
               loading={t.messagesLoading}
             />
           )}
-          {t.activeSession?.status === "closed" && (
+          {t.activeSession?.status === "closed" && !blocked && (
             <div className="border-t border-amber/30 bg-amber/5 px-4 py-2 text-xs text-amber sm:px-6">
-              [ SYSTEM ] This session is closed.{" "}
-              <button type="button" className="underline underline-offset-2 hover:text-ink" onClick={() => void t.createSession()}>
-                Open a new session
+              [ SYSTEM ] This conversation has been closed.{" "}
+              <button
+                type="button"
+                className="underline underline-offset-2 hover:text-ink disabled:opacity-60"
+                onClick={() => void t.createSession()}
+                disabled={t.creating}
+              >
+                Start a new conversation
               </button>{" "}
               to continue.
             </div>
@@ -255,7 +187,7 @@ export function TerminalApp() {
             handle={handle}
             maxLength={t.config.message_max_length}
             disabled={!t.activeSession || closedOrBlocked}
-            disabledReason={blocked ? "Access restricted" : "Session closed — input disabled"}
+            disabledReason={blocked ? "Access restricted" : "Conversation closed — input disabled"}
             onSubmit={onSubmit}
             history={history}
           />
@@ -263,34 +195,13 @@ export function TerminalApp() {
       </div>
 
       <ConfirmDialog
-        open={!!deleteTarget}
-        tone="danger"
-        title="Delete session"
-        description={
-          <>
-            Delete <span className="text-ink">{deleteTarget?.session_code}</span> from your history? It will disappear
-            from this list and be closed; you can&apos;t reopen it. Messages already sent
-            remain stored.
-          </>
-        }
-        confirmLabel="Delete"
-        busy={deleting}
-        error={deleteError}
-        onCancel={() => {
-          setDeleteTarget(null);
-          setDeleteError(null);
-        }}
-        onConfirm={() => void confirmDelete()}
-      />
-
-      <ConfirmDialog
         open={confirmExit}
         tone="danger"
         title="Exit portal"
         description={
           <>
-            Exiting ends this browser&apos;s access. Your messages stay stored. To return, enter your private key
-            again; sessions from this browser will <span className="text-ink">not</span> reappear.
+            Exiting signs this browser out. Your conversation stays stored: enter your private key again to continue
+            where you left off.
           </>
         }
         confirmLabel="Exit"

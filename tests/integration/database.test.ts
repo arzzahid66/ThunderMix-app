@@ -111,6 +111,16 @@ describe("private key login & identity", () => {
     expect((await login(newToken(), fresh)).error).toBeNull();
   });
 
+  it("signing in again reuses the open conversation; a closed one is replaced", async () => {
+    const first = await register(newToken(), "Again");
+    const again = await login(newToken(), first.key);
+    expect(again.data?.session.id).toBe(first.session.id);
+
+    await attempt({ adminToken: admin }, "select public.admin_set_session_status($1, 'closed')", [first.session.id]);
+    const fresh = await login(newToken(), first.key);
+    expect(fresh.data?.session.id).not.toBe(first.session.id);
+  });
+
   it("revoked tokens (exit) lose access", async () => {
     const token = newToken();
     const { session } = await register(token, "Exit");
@@ -122,17 +132,19 @@ describe("private key login & identity", () => {
 
 describe("row level security", () => {
   const tokenA = newToken();
+  const tokenA2 = newToken();
   const tokenB = newToken();
   let sessionA: string;
-  let sharedKey: string;
+  let keyA: string;
 
   beforeAll(async () => {
     const a = await register(tokenA, "Alice");
     sessionA = a.session.id;
-    sharedKey = a.key;
+    keyA = a.key;
     expect((await send(tokenA, sessionA, "private message from A")).error).toBeNull();
-    // Visitor B signs in with the SAME key from another browser.
-    await register(tokenB, "Alice", sharedKey);
+    // Alice signs in again on a second device; Mallory is a different user.
+    await register(tokenA2, "Alice", keyA);
+    await register(tokenB, "Mallory");
   });
 
   it("callers without a credential can read nothing", async () => {
@@ -150,11 +162,19 @@ describe("row level security", () => {
     expect(await rows(forged, "select * from users")).toHaveLength(0);
   });
 
-  it("the same key in another browser does NOT reveal the first browser's history", async () => {
+  it("another user never sees someone else's conversation", async () => {
     const sessions = await rows<{ id: string }>({ visitorToken: tokenB }, "select id from sessions");
     expect(sessions.map((s) => s.id)).not.toContain(sessionA);
     expect(await rows({ visitorToken: tokenB }, "select * from messages where session_id = $1", [sessionA])).toHaveLength(0);
     expect(await rows({ visitorToken: tokenB }, "select * from users")).toHaveLength(0);
+  });
+
+  it("the same key on another device continues the same conversation", async () => {
+    const sessions = await rows<{ id: string }>({ visitorToken: tokenA2 }, "select id from sessions");
+    expect(sessions.map((s) => s.id)).toEqual([sessionA]);
+    expect(await rows({ visitorToken: tokenA2 }, "select content from messages")).toEqual([
+      { content: "private message from A" },
+    ]);
   });
 
   it("the owner can read their own session and messages", async () => {
@@ -229,7 +249,7 @@ describe("row level security", () => {
     const [session] = await rows<Record<string, unknown>>(id, "select * from admin_session_list where id = $1", [
       sessionA,
     ]);
-    expect(session.user_key_hint).toBe(sharedKey.slice(-4));
+    expect(session.user_key_hint).toBe(keyA.slice(-4));
     expect(session.unanswered_count).toBe(1);
 
     const reply = await attempt(id, "select public.admin_send_reply($1, 'Hello from the operator', $2)", [

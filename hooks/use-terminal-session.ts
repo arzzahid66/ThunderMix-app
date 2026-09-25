@@ -23,15 +23,9 @@ interface Bootstrap {
 
 const FATAL_CODES = new Set(["no_access", "not_authenticated"]);
 
-function omit<T>(record: Record<string, T>, key: string): Record<string, T> {
-  const copy = { ...record };
-  delete copy[key];
-  return copy;
-}
-
 /**
- * All client-side state of the visitor terminal: sessions, per-session
- * message history, optimistic sends, local terminal output and the live
+ * All client-side state of the visitor terminal. Each user has one continuous
+ * conversation (their latest session): message history, optimistic sends, local terminal output and the live
  * event stream (with de-duplication by message id).
  */
 export function useTerminalSession() {
@@ -47,7 +41,6 @@ export function useTerminalSession() {
   const [local, setLocal] = useState<Record<string, LocalLine[]>>({});
   const [pending, setPending] = useState<Record<string, PendingMessage[]>>({});
   const [clearedAt, setClearedAt] = useState<Record<string, number>>({});
-  const [unread, setUnread] = useState<Record<string, boolean>>({});
   const [liveIds, setLiveIds] = useState<Set<string>>(() => new Set());
   const [confirmedIds, setConfirmedIds] = useState<Set<string>>(() => new Set());
   const [streamSince, setStreamSince] = useState<string | null>(null);
@@ -116,30 +109,11 @@ export function useTerminalSession() {
   const introduce = useCallback(
     (session: VisitorSession, fresh: boolean) => {
       addLocal(session.id, "system", [
-        `[ SYSTEM ] ${fresh ? "Session initialized" : "Session restored"}: ${session.session_code}`,
-        "[ SYSTEM ] Channel secured. Type a message and press ENTER to transmit. Type /help for commands.",
+        `[ SYSTEM ] ${fresh ? "Secure channel established." : "Conversation restored."}`,
+        "[ SYSTEM ] Type a message and press ENTER to transmit. Type /help for commands.",
       ]);
     },
     [addLocal],
-  );
-
-  const selectSession = useCallback(
-    (sessionId: string) => {
-      setActiveId(sessionId);
-      setUnread((p) => ({ ...p, [sessionId]: false }));
-      const session = sessions.find((s) => s.id === sessionId);
-      if (session) {
-        const url = new URL(window.location.href);
-        url.searchParams.set("s", session.session_code);
-        window.history.replaceState(null, "", url);
-      }
-      if (!loadedRef.current.has(sessionId)) {
-        loadedRef.current.add(sessionId);
-        if (session && !localRef.current[sessionId]) introduce(session, false);
-        void loadMessages(sessionId);
-      }
-    },
-    [sessions, introduce, loadMessages],
   );
 
   const createSession = useCallback(async () => {
@@ -152,7 +126,7 @@ export function useTerminalSession() {
       handleFatal(res.error);
       if (current) {
         const retry = res.error.retryAfter ? ` Retry in ${Math.ceil(res.error.retryAfter / 60)} min.` : "";
-        addLocal(current, "error", `[ ERROR ] Unable to open a new session. ${res.error.message}${retry}`);
+        addLocal(current, "error", `[ ERROR ] Unable to start a new conversation. ${res.error.message}${retry}`);
       }
       return null;
     }
@@ -162,39 +136,8 @@ export function useTerminalSession() {
     setMessages((prev) => ({ ...prev, [session.id]: [] }));
     introduce(session, true);
     setActiveId(session.id);
-    const url = new URL(window.location.href);
-    url.searchParams.set("s", session.session_code);
-    window.history.replaceState(null, "", url);
     return session;
   }, [creating, addLocal, handleFatal, introduce]);
-
-  /** Removes a session from this visitor's history (operators keep the record). */
-  const deleteSession = useCallback(
-    async (sessionId: string) => {
-      const res = await apiRequest(`/api/visitor/sessions/${sessionId}`, { method: "DELETE" });
-      if (!res.ok && res.error.code !== "session_not_found") {
-        handleFatal(res.error);
-        return res.error;
-      }
-      loadedRef.current.delete(sessionId);
-      const remaining = sessions.filter((s) => s.id !== sessionId);
-      setSessions(remaining);
-      setMessages((prev) => omit(prev, sessionId));
-      setLocal((prev) => omit(prev, sessionId));
-      setPending((prev) => omit(prev, sessionId));
-
-      if (activeRef.current === sessionId) {
-        const next = remaining.find((s) => s.status === "active") ?? remaining[0];
-        if (next) selectSession(next.id);
-        else {
-          setActiveId(null);
-          await createSession();
-        }
-      }
-      return null;
-    },
-    [sessions, handleFatal, selectSession, createSession],
-  );
 
   // -------------------------------------------------------------- bootstrap
   useEffect(() => {
@@ -215,9 +158,8 @@ export function useTerminalSession() {
       const sorted = mergeSessions([], data.sessions);
       setSessions(sorted);
 
-      const code = new URL(window.location.href).searchParams.get("s")?.toUpperCase();
-      const target =
-        sorted.find((s) => s.session_code === code) ?? sorted.find((s) => s.status === "active") ?? sorted[0];
+      // The user's conversation: the latest open session (else the latest one).
+      const target = sorted.find((s) => s.status === "active") ?? sorted[0];
       setBooted(true);
 
       if (!target) {
@@ -239,9 +181,6 @@ export function useTerminalSession() {
       loadedRef.current.add(target.id);
       introduce(target, target.message_count === 0);
       setActiveId(target.id);
-      const url = new URL(window.location.href);
-      url.searchParams.set("s", target.session_code);
-      window.history.replaceState(null, "", url);
       void loadMessages(target.id);
     })();
     return () => {
@@ -272,7 +211,7 @@ export function useTerminalSession() {
         return false;
       }
       if (session?.status === "closed") {
-        addLocal(sessionId, "error", "[ ERROR ] This session is closed. Type /new to open a new session.");
+        addLocal(sessionId, "error", "[ ERROR ] This conversation is closed. Start a new conversation to continue.");
         return false;
       }
       if (profile?.status === "blocked") {
@@ -330,9 +269,6 @@ export function useTerminalSession() {
     if (!known && m.sender_type !== "user") setLiveIds((prev) => new Set(prev).add(m.id));
     if (loadedRef.current.has(m.session_id)) {
       setMessages((prev) => ({ ...prev, [m.session_id]: mergeMessages(prev[m.session_id] ?? [], [m]) }));
-    }
-    if (!known && m.sender_type === "admin" && m.session_id !== activeRef.current) {
-      setUnread((p) => ({ ...p, [m.session_id]: true }));
     }
   }, []);
 
@@ -400,14 +336,11 @@ export function useTerminalSession() {
     local: activeId ? (local[activeId] ?? []) : [],
     pending: activeId ? (pending[activeId] ?? []) : [],
     clearedAt: activeId ? (clearedAt[activeId] ?? 0) : 0,
-    unread,
     liveIds,
     confirmedIds,
     status,
     creating,
-    selectSession,
     createSession,
-    deleteSession,
     send,
     addLocal,
     clearScreen,

@@ -6,6 +6,7 @@ import { Eye, EyeOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import { apiRequest } from "@/lib/api-client";
+import { markTabSignedIn } from "@/lib/terminal/tab-auth";
 import { PRIVATE_KEY_LENGTH, privateKeySchema } from "@/lib/validation/schemas";
 import { useReducedMotion } from "@/hooks/use-reduced-motion";
 import type { VisitorSession } from "@/types";
@@ -27,15 +28,15 @@ const toneClass = {
   plain: "text-ink",
 };
 
-type Phase = "boot" | "resume" | "form" | "connecting" | "granted";
+type Phase = "boot" | "form" | "connecting" | "granted";
 
-export function EntryTerminal({ existingName }: { existingName: string | null }) {
+export function EntryTerminal() {
   const router = useRouter();
   const reduced = useReducedMotion();
   const [shownRaw, setShown] = useState(0);
   const [phaseRaw, setPhase] = useState<Phase>("boot");
   const shown = reduced ? BOOT.length : shownRaw;
-  const phase: Phase = reduced && phaseRaw === "boot" ? (existingName ? "resume" : "form") : phaseRaw;
+  const phase: Phase = reduced && phaseRaw === "boot" ? "form" : phaseRaw;
   const [key, setKey] = useState("");
   const [reveal, setReveal] = useState(false);
   const [errors, setErrors] = useState<string[]>([]);
@@ -51,11 +52,11 @@ export function EntryTerminal({ existingName }: { existingName: string | null })
       i += 1;
       setShown(i);
       if (i < BOOT.length) timer = setTimeout(next, BOOT[i].delay);
-      else timer = setTimeout(() => setPhase(existingName ? "resume" : "form"), 250);
+      else timer = setTimeout(() => setPhase("form"), 250);
     };
     timer = setTimeout(next, BOOT[0].delay);
     return () => clearTimeout(timer);
-  }, [reduced, existingName]);
+  }, [reduced]);
 
   useEffect(() => {
     if (phase === "form") keyRef.current?.focus();
@@ -64,7 +65,7 @@ export function EntryTerminal({ existingName }: { existingName: string | null })
   const skipBoot = () => {
     if (phase !== "boot") return;
     setShown(BOOT.length);
-    setPhase(existingName ? "resume" : "form");
+    setPhase("form");
   };
 
   const submit = async () => {
@@ -90,21 +91,16 @@ export function EntryTerminal({ existingName }: { existingName: string | null })
       keyRef.current?.focus();
       return;
     }
-    const { session } = res.data;
     setKey("");
+    markTabSignedIn();
     setProgress((p) => [
       ...p,
       "[ SYSTEM ] Key accepted.",
-      `[ SYSTEM ] Allocating session ${session.session_code}...`,
+      "[ SYSTEM ] Opening your conversation...",
       "[ SYSTEM ] Access granted.",
     ]);
     setPhase("granted");
-    setTimeout(() => router.push(`/terminal?s=${session.session_code}`), reduced ? 0 : 650);
-  };
-
-  const newIdentity = async () => {
-    await apiRequest("/api/visitor/logout", { method: "POST", body: {} });
-    setPhase("form");
+    setTimeout(() => router.push("/terminal"), reduced ? 0 : 650);
   };
 
   const busy = phase === "connecting" || phase === "granted";
@@ -139,22 +135,6 @@ export function EntryTerminal({ existingName }: { existingName: string | null })
               ))}
               {phase === "boot" && <span className="cursor-block" aria-hidden="true" />}
             </div>
-
-            {phase === "resume" && existingName && (
-              <div className="animate-reveal space-y-4 pt-4">
-                <p className="text-cyan">
-                  [ SYSTEM ] Existing identity detected on this device: <span className="text-ink">{existingName}</span>
-                </p>
-                <div className="flex flex-wrap gap-3">
-                  <Button variant="primary" onClick={() => router.push("/terminal")} autoFocus>
-                    Resume session
-                  </Button>
-                  <Button variant="ghost" onClick={() => void newIdentity()}>
-                    Use a different key
-                  </Button>
-                </div>
-              </div>
-            )}
 
             {(phase === "form" || busy) && (
               <form
