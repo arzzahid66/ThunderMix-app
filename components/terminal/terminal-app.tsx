@@ -200,8 +200,7 @@ export function TerminalApp() {
         title="Exit portal"
         description={
           <>
-            Exiting signs this browser out. Your conversation stays stored: enter your private key again to continue
-            where you left off.
+            Exiting signs this browser out. Enter your private key again to continue where you left off.
           </>
         }
         confirmLabel="Exit"
